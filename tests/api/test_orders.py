@@ -4,8 +4,9 @@ import allure
 from utils.decorators import allure_test_details
 from http import HTTPStatus
 
-from schemas.orders import OrderResponse
-from models.orders_models import OrderDBModel
+from db_models.orders import OrderResponse
+
+from constants.messages import ERROR_MESSAGES
 
 
 @pytest.mark.api
@@ -32,17 +33,16 @@ class TestOrders:
     )
     def test_post_orders_creates_new_order(
         self,
-        db_session,
+        db_helper,
         api_manager,
         test_order
     ):
-        order_from_db = db_session.query(OrderDBModel).filter(
-            OrderDBModel.user_id == test_order.user_id
-        )
 
         with allure.step("1. Проверяем отсутствие order в БД"):
-            assert order_from_db.count() == 0, (
-                f"В базе уже присутствует заказ на {test_order.product_name} "
+            assert db_helper.get_orders_by_user_id(
+                test_order.user_id
+            ) is False, (
+                f"В базе уже присутствует заказ на {test_order.product_name}"
             )
 
         with allure.step(
@@ -60,11 +60,10 @@ class TestOrders:
             validated_response = OrderResponse.model_validate(response_json)
 
         with allure.step("6. Проверяем наличие созданного заказа в БД"):
-            order_from_db = db_session.query(OrderDBModel).filter(
-                OrderDBModel.id == validated_response.id
-            )
-            assert order_from_db.count() == 1, "Order не создался в базе"
-            order_from_db = order_from_db.first()
+            assert db_helper.order_exists_by_order_id(
+                validated_response.id
+            ) is True, "Order не создался в базе"
+            order_from_db = db_helper.get_order_by_id(validated_response.id)
 
         with allure.step(
             "7. Проверяем, что данные из запроса сохранились в БД"
@@ -141,7 +140,6 @@ class TestOrders:
             ]
     )
     def test_orders_create_negative(
-        db_session,
         api_manager,
         test_order,
         invalid_payload,
@@ -183,7 +181,7 @@ class TestOrders:
         severity=allure.severity_level.CRITICAL,
         label=("qa_name", "Simonov Aleksei"),
     )
-    def test_orders_create_duplicates(api_manager, db_session, test_order):
+    def test_orders_create_duplicates(api_manager, db_helper, test_order):
         payload = test_order.model_dump()
 
         with allure.step("1. Создание первого заказа"):
@@ -202,10 +200,9 @@ class TestOrders:
             assert validated_order1.user_id == payload["user_id"]
 
         with allure.step("3. Проверка наличия первого заказа в БД"):
-            orders_in_db = db_session.query(OrderDBModel).filter_by(
-                user_id=payload["user_id"]
-                )
-            assert orders_in_db.count() == 1, "Первый заказ не найден в БД"
+            assert db_helper.order_exists_by_user_id(
+                payload["user_id"]
+            ) is True, "Первый заказ не найден в БД"
 
         with allure.step(
             "4. Повторная попытка создать заказ с теми же данными"
@@ -228,9 +225,7 @@ class TestOrders:
         with allure.step(
             "6. Проверка, что в БД два заказа с одинаковыми данными"
         ):
-            orders = db_session.query(OrderDBModel).filter_by(
-                user_id=payload["user_id"]
-            )
+            orders = db_helper.get_orders_by_user_id(payload["user_id"])
             assert orders.count() == 2, (
                 f"Ожидалось 2 заказа, найдено: {orders.count()}"
             )
@@ -249,38 +244,34 @@ class TestOrders:
         severity=allure.severity_level.CRITICAL,
         label=("qa_name", "Simonov Aleksei"),
     )
-    def test_get_order_by_id(api_manager, db_session, test_order):
-        with allure.step("1. Создание нового заказа через API"):
-            response = api_manager.orders_api.post_orders(
-                data=test_order.model_dump(),
-                expected_status=HTTPStatus.CREATED
-            )
-            created_order = OrderResponse.model_validate(response.json())
+    def test_get_order_by_id(api_manager, create_order):
 
-        with allure.step("2. Получение заказа по его ID"):
+        with allure.step("1. Получение заказа по его ID"):
             response = api_manager.orders_api.get_order_by_id(
-                order_id=created_order.id,
+                order_id=create_order.id,
                 expected_status=HTTPStatus.OK
             )
             response_json = response.json()
             fetched_order = OrderResponse.model_validate(response_json)
 
-        with allure.step("3. Проверка, что возвращен статус 200 OK"):
+        with allure.step("2. Проверка, что возвращен статус 200 OK"):
             assert response.status_code == HTTPStatus.OK
 
-        with allure.step("4. Валидация структуры и типов полей"):
+        with allure.step("3. Валидация структуры и типов полей"):
             assert isinstance(fetched_order.id, int)
             assert isinstance(fetched_order.user_id, int)
             assert isinstance(fetched_order.product_name, str)
             assert isinstance(fetched_order.quantity, int)
 
         with allure.step(
-            "5. Проверка, что возвращённые данные совпадают с созданным заказом"
+            """
+            5. Проверка, что возвращённые данные совпадают с созданным заказом
+            """
         ):
-            assert fetched_order.id == created_order.id
-            assert fetched_order.user_id == created_order.user_id
-            assert fetched_order.product_name == created_order.product_name
-            assert fetched_order.quantity == created_order.quantity
+            assert fetched_order.id == create_order.id
+            assert fetched_order.user_id == create_order.user_id
+            assert fetched_order.product_name == create_order.product_name
+            assert fetched_order.quantity == create_order.quantity
 
     @pytest.mark.parametrize(
         "order_id_input, expected_status",

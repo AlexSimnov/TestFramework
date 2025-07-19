@@ -15,10 +15,15 @@ class OrderCreate(BaseModel):
             )
         return v
 
+    model_config = {
+        "extra": "allow",
+    }
+
 
 class OrderResponse(OrderCreate):
     id: int
 
     model_config = {
-        "from_attributes": True
+        "from_attributes": True,
+        "extra": "allow",
     }

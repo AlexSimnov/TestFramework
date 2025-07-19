@@ -18,10 +18,15 @@ class UserCreate(BaseModel):
             )
         return value
 
+    model_config = {
+        "extra": "allow",
+    }
+
 
 class UserResponce(UserCreate):
     id: int
 
     model_config = {
-        "from_attributes": True
+        "from_attributes": True,
+        "extra": "allow",
     }

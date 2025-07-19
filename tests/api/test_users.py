@@ -2,9 +2,9 @@ import pytest
 import allure
 
 from utils.decorators import allure_test_details
+from constants.messages import ERROR_MESSAGES
 
 from models.users_models import UserResponce
-from schemas.users import UserDBModel
 
 from http import HTTPStatus
 
@@ -35,12 +35,11 @@ class TestUsers:
         severity=allure.severity_level.CRITICAL,
         label=("qa_name", "Simonov Aleksei"),
     )
-    def test_users_create_valid(self, db_session, api_manager, test_user):
-        user_from_db = db_session.query(UserDBModel).filter(
-            UserDBModel.username == test_user.username)
+    def test_users_create_valid(self, db_helper, api_manager, test_user):
 
         with allure.step("1. Проверяем отсутствие пользоваетеля в бд"):
-            assert user_from_db.count() == 0, (
+            assert db_helper.user_exists_by_username(
+                test_user.username) is False, (
                 "В базе уже присутствует user "
                 f"c username: {test_user.username}"
             )
@@ -55,18 +54,17 @@ class TestUsers:
         ):
             responce = api_manager.users_api.post_users(test_user.model_dump())
             responce = responce.json()
-            responce = UserResponce.model_validate(**responce)
+            responce = UserResponce.model_validate(responce)
 
         with allure.step(
             "6. Проверяем создание уникального пользователя в бд"
         ):
-            user_from_db = db_session.query(UserDBModel).filter(
-                UserDBModel.username == test_user.username)
 
-            assert user_from_db.count() == 1, (
+            assert db_helper.user_exists_by_username(
+                test_user.username) is True, (
                 f"В базе user c {test_user.username} не уникален"
             )
-            user_from_db = user_from_db.first()
+            user_from_db = db_helper.get_user_by_username(test_user.username)
 
         with allure.step(
             "7. Проверяем, что данные из запроса сохранились в БД"
@@ -194,8 +192,9 @@ class TestUsers:
     )
     def test_users_create_unique_username(self,
                                           api_manager,
-                                          setup_user_db):
-        db_session, created_user = setup_user_db
+                                          setup_user_db,
+                                          db_helper):
+        created_user = setup_user_db
         user_payload = {
             "username": created_user.username,
             "email": UserDataGenerator.generate_random_email(),
@@ -220,9 +219,9 @@ class TestUsers:
         with allure.step(
             "3. Проверка что user с такими username не создался в БД"
         ):
-            users = db_session.query(UserDBModel).filter(
-                UserDBModel.username == created_user.username)
-            assert users.count() == 1, (
+            assert db_helper.user_exists_by_username(
+                created_user.username
+            ) == 1, (
                 "В базе уже присутствует user "
                 "c username: {}".format(
                     created_user.username
@@ -245,8 +244,9 @@ class TestUsers:
     )
     def test_users_create_unique_email(self,
                                        api_manager,
-                                       setup_user_db):
-        db_session, created_user = setup_user_db
+                                       setup_user_db,
+                                       db_helper):
+        created_user = setup_user_db
         user_payload = {
             "username": UserDataGenerator.generate_random_username,
             "email": created_user.email,
@@ -271,9 +271,9 @@ class TestUsers:
         with allure.step(
             "3. Проверка что user с такими email не создался в БД"
         ):
-            users = db_session.query(UserDBModel).filter(
-                UserDBModel.email == created_user.email)
-            assert users.count() == 1, (
+            assert db_helper.user_exists_by_username(
+                created_user.username
+            ) == 1, (
                 "В базе уже присутствует user "
                 "c email: {}".format(
                     created_user.email
@@ -297,7 +297,7 @@ class TestUsers:
         label=("qa_name", "Simonov Aleksei"),
     )
     def test_users_get_valid(self, api_manager, setup_user_db):
-        _, created_user = setup_user_db
+        created_user = setup_user_db
 
         with allure.step(
             """
@@ -309,7 +309,7 @@ class TestUsers:
         ):
             responce = api_manager.users_api.get_users_by_id(created_user.id)
             responce = responce.json()
-            responce = UserResponce.model_validate(**responce)
+            responce = UserResponce.model_validate(responce)
 
         with allure.step(
             "5. Проверяем, что ответ API соответствует данным в БД"

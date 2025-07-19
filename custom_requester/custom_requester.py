@@ -30,7 +30,10 @@ class CustomRequester:
         if need_logging:
             self.log_request_and_response(response)
         if response.status_code != expected_status:
-            raise ValueError(f"Unexpected status code: {response.status_code}. Expected: {expected_status}")
+            raise ValueError(
+                f"Unexpected status code: {response.status_code}."
+                f"Expected: {expected_status}"
+                )
         return response
 
     def log_request_and_response(self, response):
